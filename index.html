@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Taqwa Home Delivery - Customer Portal</title>
+<style>
+  body { font-family: Arial, sans-serif; max-width: 600px; margin: 1em auto; padding: 0 1em; }
+  h1,h2 { color: #f4b400; }
+  input, select, button, textarea { width: 100%; padding: 0.5em; margin: 0.3em 0 1em 0; box-sizing: border-box; }
+  button { background: #f4b400; border: none; cursor: pointer; font-weight: bold; }
+  button:hover { background: #db9c00; }
+  .hidden { display: none; }
+  .error { color: red; }
+  .success { color: green; }
+  table { border-collapse: collapse; width: 100%; margin-bottom: 1em; }
+  th, td { border: 1px solid #ddd; padding: 0.5em; text-align: left; }
+  tr:nth-child(even) { background: #f9f9f9; }
+  .cancel-btn { background: #d9534f; color: white; border: none; padding: 0.3em 0.6em; cursor: pointer; }
+  .cancel-btn:hover { background: #c9302c; }
+</style>
+</head>
+<body>
+
+<h1>Taqwa Home Delivery</h1>
+
+<div id="message"></div>
+
+<div id="register-section">
+  <h2>Register</h2>
+  <input type="text" id="reg-name" placeholder="Full Name" />
+  <input type="email" id="reg-email" placeholder="Email" />
+  <input type="password" id="reg-password" placeholder="Password" />
+  <button onclick="register()">Register</button>
+  <p>Already have an account? <a href="#" onclick="showLogin()">Login here</a></p>
+</div>
+
+<div id="login-section" class="hidden">
+  <h2>Login</h2>
+  <input type="email" id="login-email" placeholder="Email" />
+  <input type="password" id="login-password" placeholder="Password" />
+  <button onclick="login()">Login</button>
+  <p>Don't have an account? <a href="#" onclick="showRegister()">Register here</a></p>
+</div>
+
+<div id="dashboard-section" class="hidden">
+  <h2>Welcome, <span id="user-name"></span>!</h2>
+  <button onclick="logout()">Logout</button>
+
+  <h3>Place New Order</h3>
+  <input type="text" id="order-product" placeholder="Product Name" />
+  <input type="number" id="order-qty" placeholder="Quantity" min="1" />
+  <textarea id="order-address" placeholder="Delivery Address"></textarea>
+  <input type="tel" id="order-phone" placeholder="Phone Number" />
+  <button onclick="placeOrder()">Place Order</button>
+
+  <h3>Your Orders</h3>
+  <table id="orders-table">
+    <thead>
+      <tr>
+        <th>Order ID</th>
+        <th>Date & Time</th>
+        <th>Product</th>
+        <th>Qty</th>
+        <th>Status</th>
+        <th>Cancel</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+</div>
+
+<script>
+  const BACKEND_URL = "https://script.google.com/macros/s/AKfycbz2JzYJFaEEvRk0Mx1jw9bae1g87iNQNXhPLaMSjYWgjrKaVXxMvtSpf36BVUcJbgbE/exec";
+
+  // State stored in sessionStorage
+  function showMessage(msg, type) {
+    const div = document.getElementById('message');
+    div.textContent = msg;
+    div.className = type || '';
+    if (msg) {
+      setTimeout(() => { div.textContent = ''; div.className = ''; }, 8000);
+    }
+  }
+
+  function showRegister() {
+    document.getElementById('register-section').classList.remove('hidden');
+    document.getElementById('login-section').classList.add('hidden');
+    document.getElementById('dashboard-section').classList.add('hidden');
+    clearInputs();
+  }
+  function showLogin() {
+    document.getElementById('register-section').classList.add('hidden');
+    document.getElementById('login-section').classList.remove('hidden');
+    document.getElementById('dashboard-section').classList.add('hidden');
+    clearInputs();
+  }
+  function showDashboard() {
+    document.getElementById('register-section').classList.add('hidden');
+    document.getElementById('login-section').classList.add('hidden');
+    document.getElementById('dashboard-section').classList.remove('hidden');
+  }
+  function clearInputs() {
+    ['reg-name','reg-email','reg-password','login-email','login-password',
+     'order-product','order-qty','order-address','order-phone'].forEach(id => {
+      const el = document.getElementById(id);
+      if(el) el.value = '';
+    });
+  }
+
+  // Registration
+  async function register() {
+    const name = document.getElementById('reg-name').value.trim();
+    const email = document.getElementById('reg-email').value.trim();
+    const password = document.getElementById('reg-password').value;
+    if (!name || !email || !password) return showMessage("Please fill all registration fields", "error");
+    try {
+      const res = await fetch(BACKEND_URL, {
+        method: 'POST',
+        body: JSON.stringify({action:"register", name, email, password}),
+        headers: {'Content-Type': 'application/json'}
+      });
+      const data = await res.json();
+      if (data.status === "success") {
+        showMessage("Registered! Please check your email to confirm your account.", "success");
+        showLogin();
+      } else {
+        showMessage(data.message || "Registration failed", "error");
+      }
+    } catch(e) {
+      showMessage("Error: " + e.message, "error");
+    }
+  }
+
+  // Login
+  async function login() {
+    const email = document.getElementById('login-email').value.trim();
+    const password = document.getElementById('login-password').value;
+    if (!email || !password) return showMessage("Please fill all login fields", "error");
+    try {
+      const res = await fetch(BACKEND_URL, {
+        method: 'POST',
+        body: JSON.stringify({action:"login", email, password}),
+        headers: {'Content-Type': 'application/json'}
+      });
+      const data = await res.json();
+      if (data.status === "success") {
+        sessionStorage.setItem("userEmail", email);
+        sessionStorage.setItem("userToken", data.token);
+        sessionStorage.setItem("userName", data.name);
+        sessionStorage.setItem("userRole", data.role);
+        showDashboard();
+        loadOrders();
+      } else {
+        showMessage(data.message || "Login failed", "error");
+      }
+    } catch(e) {
+      showMessage("Error: " + e.message, "error");
+    }
+  }
+
+  function logout() {
+    sessionStorage.clear();
+    showLogin();
+  }
+
+  async function placeOrder() {
+    const product = document.getElementById('order-product').value.trim();
+    const qty = document.getElementById('order-qty').value.trim();
+    const address = document.getElementById('order-address').value.trim();
+    const phone = document.getElementById('order-phone').value.trim();
+    const name = sessionStorage.getItem("userName");
+    const email = sessionStorage.getItem("userEmail");
+    const token = sessionStorage.getItem("userToken");
+
+    if (!product || !qty || !address || !phone) return showMessage("Please fill all order fields", "error");
+
+    try {
+      const res = await fetch(BACKEND_URL, {
+        method: 'POST',
+        body: JSON.stringify({action:"placeOrder", product, qty, address, phone, name, email, token}),
+        headers: {'Content-Type': 'application/json'}
+      });
+      const data = await res.json();
+      if (data.status === "success") {
+        showMessage("Order placed! ID: " + data.orderId, "success");
+        clearOrderInputs();
+        loadOrders();
+      } else {
+        showMessage(data.message || "Order failed", "error");
+      }
+    } catch(e) {
+      showMessage("Error: " + e.message, "error");
+    }
+  }
+
+  function clearOrderInputs() {
+    ['order-product','order-qty','order-address','order-phone'].forEach(id => {
+      const el = document.getElementById(id);
+      if(el) el.value = '';
+    });
+  }
+
+  async function loadOrders() {
+    const email = sessionStorage.getItem("userEmail");
+    const token = sessionStorage.getItem("userToken");
+    if (!email || !token) return;
+
+    try {
+      const res = await fetch(BACKEND_URL, {
+        method: 'POST',
+        body: JSON.stringify({action:"getOrders", email, token}),
+        headers: {'Content-Type': 'application/json'}
+      });
+      const data = await res.json();
+      if (data.status === "success") {
+        renderOrders(data.orders);
+      } else {
+        showMessage(data.message || "Failed to load orders", "error");
+      }
+    } catch(e) {
+      showMessage("Error: " + e.message, "error");
+    }
+  }
+
+  function renderOrders(orders) {
+    const tbody = document.querySelector("#orders-table tbody");
+    tbody.innerHTML = "";
+    if (!orders.length) {
+      tbody.innerHTML = "<tr><td colspan='6'>No orders found</td></tr>";
+      return;
+    }
+    orders.forEach(order => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${order.orderId}</td>
+        <td>${order.dateTime}</td>
+        <td>${order.product}</td>
+        <td>${order.qty}</td>
+        <td>${order.status}</td>
+        <td>${order.status !== "Cancelled" ? `<button class="cancel-btn" onclick="cancelOrder('${order.orderId}')">Cancel</button>` : ""}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  async function cancelOrder(orderId) {
+    if (!confirm("Are you sure you want to cancel order " + orderId + "?")) return;
+    const email = sessionStorage.getItem("userEmail");
+    const token = sessionStorage.getItem("userToken");
+    try {
+      const res = await fetch(BACKEND_URL, {
+        method: 'POST',
+        body: JSON.stringify({action:"cancelOrder", orderId, email, token}),
+        headers: {'Content-Type': 'application/json'}
+      });
+      const data = await res.json();
+      if (data.status === "success") {
+        showMessage("Order cancelled: " + orderId, "success");
+        loadOrders();
+      } else {
+        showMessage(data.message || "Cancel failed", "error");
+      }
+    } catch(e) {
+      showMessage("Error: " + e.message, "error");
+    }
+  }
+
+  // On page load
+  (function init() {
+    const email = sessionStorage.getItem("userEmail");
+    const token = sessionStorage.getItem("userToken");
+    const name = sessionStorage.getItem("userName");
+    if (email && token && name) {
+      showDashboard();
+      document.getElementById("user-name").textContent = name;
+      loadOrders();
+    } else {
+      showRegister();
+    }
+  })();
+
+</script>
+
+</body>
+</html>
